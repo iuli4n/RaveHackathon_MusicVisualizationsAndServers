@@ -1,5 +1,8 @@
-# requires Python3 and aioconsole library
-# runs a WebSocket server where there's a local variable being broadcast to all clients
+# requires Python3 and some of these libraries
+#
+# does these:
+#    - runs a WebSocket server where there's a local variable being broadcast to all clients
+#    - the data is coming from audio analysis
 #
 # Other python websocket examples: https://www.piesocket.com/blog/python-websocket
 
@@ -16,17 +19,42 @@ from scipy.io import wavfile
 import time
 import sys
 import wave
+from scipy.interpolate import interp1d
+
+#################################################
+# MISC - FOR SIMPLIFYING AUDIO
+#
+
+MAXSIMPLIFIED = 10
+MAXRANGE = 50000
+    
+def mscale(v):
+    
+    v = min(v, MAXRANGE)
+    x = int(interp1d([0,MAXRANGE],[0,MAXSIMPLIFIED])(v))
+    
+    return x
+    
+def stars(x):
+    s = ""
+    
+    for i in range(x):
+        s = s+"*"
+    for i in range(MAXSIMPLIFIED-x-1):
+        s = s+" "
+    
+    return s
+    
 
 
-
-
-### WEBSOCKETS
+##################################################
+## WEBSOCKETS
 #
 # TODOS:
 #   -!! slow clients will get flooded. need a js-level PING mechanism (the websocket ping doesn't work properly because it's lower level)
 
-# how much time between sending updates to each client 
-UPDATEDELAY = 0.1
+DELAY_CLIENTUPDATES = 0.1   # how much time between sending updates to each client 
+DELAY_SERVERSTATUS = 10     # seconds between printing the server status to console
 
 # tracks all clients connected to the webserver
 wsclients = []
@@ -44,7 +72,7 @@ async def ws_serverStatusLoop():
             
             print("\t\t"+str(client.remote_address) + " PING: "+ str(client.latency))
         
-        await asyncio.sleep(1)
+        await asyncio.sleep(DELAY_SERVERSTATUS)
 
 # coroutine that runs for each client
 async def wsclient_handler(websocket, path):
@@ -61,8 +89,9 @@ async def wsclient_handler(websocket, path):
         try:
             # send the current value of 'reply'
             await websocket.send(str(reply))
-            await asyncio.sleep(UPDATEDELAY)
-            
+            await asyncio.sleep(DELAY_CLIENTUPDATES)
+        
+        # when client disconnects..
         except websockets.ConnectionClosed:
             print("WS Client disconnected "+str(websocket.remote_address)+"   "+str(websocket.id))
             wsclients.remove(websocket)
@@ -80,14 +109,14 @@ def ws_startServer():
 
 
 
-######################### AUDIO
+######################### AUDIO PROCESSING
 
 
 FORMAT = pyaudio.paInt16 # We use 16bit format per sample
 CHANNELS = 1
 RATE = 44100
-CHUNK = 2048 # bytes of data red from a buffer
-RECORD_SECONDS = 0.1
+CHUNK = 1024 # 2048 # bytes of data red from a buffer
+RECORD_SECONDS = 0.1 # 0.1
 WAVE_OUTPUT_FILENAME = "file.wav"
 
 # use a Blackman window
@@ -100,8 +129,8 @@ audio = pyaudio.PyAudio()
 stream = audio.open(format=FORMAT,
                     channels=CHANNELS,
                     rate=RATE,
-                    input=True)#,
-                    #frames_per_buffer=CHUNK)
+                    input=True,
+                    frames_per_buffer=CHUNK)
                  
 
 # Open the connection and start streaming the data
@@ -118,7 +147,10 @@ def plot_data_OLD(in_data):
     dfft = 10.*np.log10(abs(np.fft.rfft(audio_data)))
 
     print(len(dfft),"   ",dfft[500])
-
+    
+    
+global ai2
+ai2 = 1;
 
 def plot_data(in_data):
     waveData = wave.struct.unpack("%dh"%(CHUNK), in_data)
@@ -128,10 +160,21 @@ def plot_data(in_data):
     fftTime=np.fft.rfftfreq(CHUNK, 1./RATE)
     which = fftData[1:].argmax() + 1
     
-    print(round(fftData[124]))
+    m1 = (round(fftData[ai2]))
+    m2 = (round(fftData[70]))
+    m3 = (round(fftData[120]))
+    
+    val1 = mscale(m1)
+    val2 = mscale(m2)
+    val3 = mscale(m3)
+    
+    print(ai2,"\t", stars(val1),"\t", stars(val2), "\t", stars(val3))
     
     global reply
-    reply = round(fftData[124])
+    reply = str(val1)+","+str(val2)+","+str(val3)
+
+
+##################################################
 
 
 ### BACKGROUND PROCESSING
@@ -152,12 +195,13 @@ async def incrementor():
 		await asyncio.sleep(ANALYSISDELAY)
 
 
+##################################################
 
 
 
 
 
-
+##################################################
 ### MAIN EXECUTION
 
 # run incremental task
@@ -171,7 +215,22 @@ asyncio.get_event_loop().create_task(ws_serverStatusLoop())
 # wait for keypress
 
 async def waitkey():
-    line = await aioconsole.ainput('Press CTRL+C or ENTER to quit.\n')
+    while True:
+        line = await aioconsole.ainput('Press CTRL+C or ENTER to quit.\n')
+        
+        global ai2
+        
+        if (line == "["):
+            ai2 = ai2 - 3
+            ai2 = max(ai2, 1)
+            
+        if (line == "]"):
+            ai2 = ai2 + 3
+            ai2 = min(ai2, 512)
+            
+        if (line == "q"):
+            return;
+    
     print("*** QUITTING, BUT THIS MAY RAISE ERRORS ****")
 
 loop = asyncio.get_event_loop()
