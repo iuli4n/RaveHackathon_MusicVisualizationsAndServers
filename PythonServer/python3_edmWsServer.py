@@ -21,6 +21,14 @@ import sys
 import wave
 from scipy.interpolate import interp1d
 
+
+########### GENERAL CONFIG
+
+WS_PORT = 8000; # websocket local server port
+WS_VERBOSE = False;
+
+
+
 #################################################
 # MISC - FOR SIMPLIFYING AUDIO
 #
@@ -53,7 +61,7 @@ def stars(x):
 # TODOS:
 #   -!! slow clients will get flooded. need a js-level PING mechanism (the websocket ping doesn't work properly because it's lower level)
 
-DELAY_CLIENTUPDATES = 0.1   # how much time between sending updates to each client 
+DELAY_CLIENTUPDATES = 0.05   # how much time between sending updates to each client 
 DELAY_SERVERSTATUS = 10     # seconds between printing the server status to console
 
 # tracks all clients connected to the webserver
@@ -100,7 +108,7 @@ async def wsclient_handler(websocket, path):
 
 def ws_startServer():
     # start server
-    start_server = websockets.serve(wsclient_handler, "localhost", 8000)
+    start_server = websockets.serve(wsclient_handler, "localhost", WS_PORT)
     asyncio.get_event_loop().run_until_complete(start_server)
     print ("Server running. Waiting for clients...")
 
@@ -116,7 +124,7 @@ FORMAT = pyaudio.paInt16 # We use 16bit format per sample
 CHANNELS = 1
 RATE = 44100
 CHUNK = 1024 # 2048 # bytes of data red from a buffer
-RECORD_SECONDS = 0.1 # 0.1
+RECORD_SECONDS = 0.05 # 0.1
 WAVE_OUTPUT_FILENAME = "file.wav"
 
 # use a Blackman window
@@ -150,7 +158,7 @@ def plot_data_OLD(in_data):
     
     
 global ai2
-ai2 = 1;
+ai2 = 4;
 
 def plot_data(in_data):
     waveData = wave.struct.unpack("%dh"%(CHUNK), in_data)
@@ -168,7 +176,8 @@ def plot_data(in_data):
     val2 = mscale(m2)
     val3 = mscale(m3)
     
-    print(ai2,"\t", stars(val1),"\t", stars(val2), "\t", stars(val3))
+    if (WS_VERBOSE):
+        print(ai2,"\t", stars(val1),"\t", stars(val2), "\t", stars(val3))
     
     global reply
     reply = str(val1)+","+str(val2)+","+str(val3)
